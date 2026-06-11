@@ -83,7 +83,9 @@ const HOMES = [
     rows: [
       { k: '位置', v: '朝阳区豆各庄（磁器口东南约 16 公里）' },
       { k: '开车', v: '约 45 分钟（16 公里）' },
-      { k: '公交', v: '约 57 分钟：7 号线 + 步行 18 分钟；或乘 41/535/411 路约 1 小时 23 分' },
+      { k: '公交', v: '约 57 分钟，地铁直达（无换乘）' },
+      { k: '医院', v: '社区卫生服务中心在侧；大医院需往市区方向' },
+      { k: '商超', v: '社区超市、菜市场齐全' },
       { k: '装修', v: '毛坯（需自己花钱装修）', hl: 'warn' },
       { k: '产权', v: '按经适房产权管理（转让有限制）', hl: 'warn' },
       { k: '物业费', v: '1.63 元/月/㎡' },
@@ -94,9 +96,11 @@ const HOMES = [
     id: 'dlu', name: '通州 · 东惠家园', tagline: '现房',
     price: '21,000 元/㎡', priceNum: 21000,
     rows: [
-      { k: '位置', v: '通州区（磁器口东南约 20 公里）' },
+      { k: '位置', v: '通州区台湖镇（磁器口以东约 16 公里）' },
       { k: '开车', v: '约 53 分钟（23.5 公里）' },
-      { k: '公交', v: '约 1 小时 11 分：5 号线转亦庄线 + 步行 24 分钟' },
+      { k: '公交', v: '约 1 小时 11 分，换乘 1 次' },
+      { k: '医院', v: '通州区第三医院（二级）在镇内' },
+      { k: '商超', v: '镇内超市齐全；大型商场在亦庄、通州城区' },
       { k: '装修', v: '毛坯（需自己花钱装修）', hl: 'warn' },
       { k: '产权', v: '按经适房管理（转让有限制）', hl: 'warn' },
       { k: '物业费', v: '1.98 元/月/㎡' },
@@ -107,10 +111,12 @@ const HOMES = [
     id: 'dx', name: '大兴 · 和悦璞云', tagline: '现房',
     price: '一房一价', priceNum: 0,
     rows: [
-      { k: '位置', v: '大兴区（磁器口以南约 50 公里）' },
+      { k: '位置', v: '大兴区榆垡镇（磁器口以南约 50 公里，近大兴机场）' },
       { k: '开车', v: '约 1 小时 12 分（50 公里）' },
-      { k: '公交', v: '约 1 小时 40 分：5 号线 → 300 路快内 → 849 路高速快车 + 步行 21 分钟' },
+      { k: '公交', v: '约 1 小时 40 分，换乘 2 次' },
       { k: '总价', v: '一居室约 88–107 万；二居室约 123–147 万' },
+      { k: '医院', v: '大兴区人民医院南院区约 1 公里' },
+      { k: '商超', v: '社区配套商业、物美超市；大型商场较远' },
       { k: '装修', v: '精装修（可直接入住）', hl: 'good' },
       { k: '产权', v: '商品住房（需符合限购）', hl: 'warn' },
       { k: '物业费', v: '3.98 元/月/㎡' },
@@ -240,10 +246,15 @@ function optionBtnHtml(act, sel, label, sub) {
     + '</button>';
 }
 
+const withBorders = arr => arr.map((ln, i) => ({
+  ...ln,
+  border: i < arr.length - 1 ? '1px dashed #E3DBCB' : 'none',
+}));
+
 function lineRowHtml(ln) {
-  return '<div style="display:flex;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px dashed #E3DBCB;">'
+  return '<div style="display:flex;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:' + ln.border + ';">'
     + '<div style="flex:1;min-width:0;">'
-    + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
+    + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-height:30px;">'
     + '<span style="font-size:17px;color:#322A20;font-weight:700;">' + ln.name + '</span>'
     + (ln.info ? infoBtnHtml(ln.info, '政策原文', '13.5px', '3px 9px') : '')
     + '</div>'
@@ -319,15 +330,17 @@ function homesHtml(r) {
     if (!r.ready) {
       dyn = '填好面积后自动测算';
     } else if (h.id === 'dx') {
-      if (t >= 1470000) dyn = '一居室、二居室都够买';
-      else if (t >= 1230000) dyn = '一居室都够买；二居室部分户型够';
-      else if (t >= 1070000) dyn = '一居室都够买；买二居室要添钱';
-      else if (t >= 880000) dyn = '部分一居室够买；买二居室要添钱';
+      const tEff = t / 1.015; // 预留约 1.5% 税费
+      if (tEff >= 1470000) dyn = '一居室、二居室都够买';
+      else if (tEff >= 1230000) dyn = '一居室都够买；二居室部分户型够';
+      else if (tEff >= 1070000) dyn = '一居室都够买；买二居室要添钱';
+      else if (tEff >= 880000) dyn = '部分一居室够买；买二居室要添钱';
       else dyn = '买一居室（88 万起）需要自己添钱';
-      dyn += '（未计税费）。';
+      dyn += '（已留出约 1.5% 税费；精装无需再装修）。';
     } else {
       const max = Math.floor(t / h.priceNum * 100) / 100;
-      dyn = '不另掏钱最多能买约 ' + fmtA(max) + ' ㎡（未计税费）。';
+      const maxAll = Math.floor(t / (h.priceNum * 1.015 + 1000) * 100) / 100;
+      dyn = '不另掏钱最多能买约 ' + fmtA(max) + ' ㎡；若算上简装（约 1,000 元/㎡）和约 1.5% 税费，约 ' + fmtA(maxAll) + ' ㎡。';
     }
     const rows = h.rows.map(rw => {
       const color = rw.hl === 'warn' ? '#8A4438' : (rw.hl === 'good' ? '#2F4A38' : '#4A4338');
@@ -354,10 +367,10 @@ function homesHtml(r) {
     + '<div style="font-size:20px;font-weight:700;">能买哪里的房？</div>'
     + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;">'
     + '<span style="font-size:15.5px;font-weight:700;color:#322A20;line-height:1.6;">' + quotaText + '</span>'
-    + infoBtnHtml('quota', '看政策原文', '14px', '5px 10px')
+    + infoBtnHtml('quota', '政策原文', '14px', '5px 10px')
     + '</div>'
     + cards
-    + '<div style="font-size:12.5px;color:#9A9080;margin-top:10px;line-height:1.6;">位置、距离与交通为公开信息整理；物业费、停车费以小区公示为准。以上信息仅供参考，请实地核实。</div>'
+    + '<div style="font-size:12.5px;color:#9A9080;margin-top:10px;line-height:1.6;">位置、距离、交通与配套为公开信息整理；物业费、停车费以小区公示为准；简装单价与税费为粗略估算。以上信息仅供参考，请实地核实。</div>'
     + '</div>';
 }
 
@@ -390,10 +403,10 @@ function step4Html(st, r) {
     + '<span style="background:#322A20;color:#F6F2EA;font-size:13.5px;font-weight:700;border-radius:6px;padding:2px 8px;">方案一</span>'
     + '<span style="font-size:19px;font-weight:700;">货币补偿，是怎么算的</span>'
     + '</div>'
-    + moneyLines(r).map(lineRowHtml).join('')
+    + withBorders(moneyLines(r)).map(lineRowHtml).join('')
     + '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;border-top:3px double #C9BFA9;margin-top:4px;padding-top:11px;">'
     + '<span style="font-size:17px;font-weight:700;">合计</span>'
-    + '<span style="font-family:' + SERIF + ';font-size:24px;font-weight:900;color:#322A20;">' + moneyWan + '<span style="font-size:14px;font-weight:700;margin-left:3px;">万元</span></span>'
+    + '<span style="font-family:' + SERIF + ';font-size:24px;font-weight:900;color:#322A20;white-space:nowrap;flex:none;">' + moneyWan + '<span style="font-size:14px;font-weight:700;margin-left:3px;">万元</span></span>'
     + '</div>'
     + '</div>';
 
@@ -402,10 +415,10 @@ function step4Html(st, r) {
     + '<span style="background:#A63D2F;color:#FBF6F1;font-size:13.5px;font-weight:700;border-radius:6px;padding:2px 8px;">方案二</span>'
     + '<span style="font-size:19px;font-weight:700;">买安置房，在方案一上再加</span>'
     + '</div>'
-    + houseLines(r).map(lineRowHtml).join('')
+    + withBorders(houseLines(r)).map(lineRowHtml).join('')
     + '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;border-top:3px double #C9BFA9;margin-top:4px;padding-top:11px;">'
     + '<span style="font-size:17px;font-weight:700;">合计</span>'
-    + '<span style="font-family:' + SERIF + ';font-size:24px;font-weight:900;color:#A63D2F;">' + houseWan + '<span style="font-size:14px;font-weight:700;margin-left:3px;">万元</span></span>'
+    + '<span style="font-family:' + SERIF + ';font-size:24px;font-weight:900;color:#A63D2F;white-space:nowrap;flex:none;">' + houseWan + '<span style="font-size:14px;font-weight:700;margin-left:3px;">万元</span></span>'
     + '</div>'
     + '<div style="margin-top:10px;background:#F9EFEC;border:1px solid #EAD2C9;border-radius:10px;padding:9px 12px;font-size:14.5px;line-height:1.65;color:#8A4438;">买房的钱从这笔补偿里扣，超出部分自己付。</div>'
     + '</div>'
