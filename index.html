@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>腾退补偿计算器</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;700;900&display=swap" media="print" onload="this.media='all'">
+<style>
+  body { margin: 0; background: #E9E5DC; }
+  input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type=number] { -moz-appearance: textfield; }
+  input::placeholder { color: #BCB19B; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+'use strict';
+
+const PRICE = 90764, RESET = 2898, MOVERATE = 1080, BIZRATE = 3000, BUY = 300000;
+const LS_KEY = 'tengtui-calc-b2';
+
+const fmt = n => Math.round(n).toLocaleString('zh-CN');
+const fmtA = n => (Math.round(n * 100) / 100).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+const wanStr = n => {
+  let s = (n / 10000).toFixed(2).replace(/\.?0+$/, '');
+  return Number(s).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+};
+const escAttr = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+
+const SERIF = "'Noto Serif SC',Georgia,'Songti SC',serif";
+
+const HTYPES = [
+  { v: 'private', label: '私有住房（私房）', short: '私房', sub: '自家的房，有《房产权证》或《不动产权证书》。' },
+  { v: 'zhiguan', label: '直管公房', short: '直管公房', sub: '租住房管部门的房，有《北京市公有住宅租赁合同》。' },
+  { v: 'danwei', label: '单位公房', short: '单位公房', sub: '租住单位自营自管的公房（由产权单位出具认定材料）。' },
+  { v: 'biaozhun', label: '标准租私房', short: '标准租', sub: '作为标准租私房的承租人（补偿为资助标准）。' },
+];
+
+const INFO = {
+  area: {
+    title: '面积是怎么认定的',
+    quote: '私有住房：按照《房屋所有权证》或《不动产权证书》记载的建筑面积确定。<br><br>直管公房：按照承租人与房屋经营管理单位签订的《北京市公有住宅租赁合同》记载的房屋使用面积的 <b>1.333 倍</b>确定（结果四舍五入，保留 2 位小数）。<br><br>单位自营公房：以产权单位提供的书面认定材料中的承租使用面积的 <b>1.333 倍</b>确定。<br><br>标准租私房：按照证书记载的建筑面积确定。<br><br><b>自建房屋面积不予认定</b>；违法建设依法处置、不予补偿。',
+    src: '—— 《腾退政策》六、相关认定标准（四）（五）',
+  },
+  comp: {
+    title: '补偿标准与评估结果',
+    quote: '实施主体按照被腾退房屋价值给予被腾退人货币补偿，其中，<b>公房需扣除被腾退房屋重置成新价</b>；标准租私房承租人资助标准为房屋价值扣除重置成新价。（各户金额以分户评估报告为准）<br><br>经十家估价机构联合评估（价值时点 2026 年 6 月 11 日）：<br>住宅标准房屋市场价格：<b>90,764 元/建筑平方米</b><br>住宅标准房屋重置成新价：<b>2,898 元/建筑平方米</b>',
+    src: '—— 《腾退政策》七、腾退补偿标准；《房地产评估结果公示》',
+  },
+  move: {
+    title: '搬家腾房补助',
+    quote: '按腾退补偿协议约定完成搬家腾房的，按房屋建筑面积获得一次性搬家腾房补助：<b>1080 元/平方米 × 建筑面积</b>。',
+    src: '—— 《腾退政策》八、相关补助（三）',
+  },
+  biz: {
+    title: '停产停业损失补助',
+    quote: '房屋用作经营、持合法有效营业执照（或登记证）且载明住所为被腾退房屋的：按载明营业面积给予 <b>3000 元/平方米</b>补助；未载明面积的按实际经营面积算，<b>不得超过正式房屋建筑面积</b>。',
+    src: '—— 《腾退政策》八、相关补助（四）',
+  },
+  buy: {
+    title: '购房补助',
+    quote: '被腾退人及标准租私房承租人，选择购买对接安置房源的，<b>每户一次性给予购房补助 30 万元</b>。',
+    src: '—— 《腾退政策》八、相关补助（一）',
+  },
+  small: {
+    title: '小面积住房困难补助',
+    quote: '同一被腾退人在本项目内所有被腾退房屋总建筑面积<b>小于 12 平方米</b>，且选择<b>购买对接安置房源</b>的，一次性给予：<br><br>补助 =（12 − 总建筑面积）× 标准房屋市场价格 × 1.3 × 70%',
+    src: '—— 《腾退政策》八、相关补助（二）',
+  },
+  quota: {
+    title: '安置房源申购标准',
+    quote: '<b>对接安置房源：</b>被腾退房屋建筑面积<b>小于 30 平方米</b>，可购买<b>一套</b>；<b>大于等于 30 平方米</b>，可购买<b>两套</b>。<br><br><b>居住困难房源：</b>购买对接安置房源后，户籍在本项目的其他人员符合条件的（本市常住户口、以家庭为单位在本市无其他正式住房、满 18 周岁、未享受过保障房等，详见政策原文），可另购居住困难房源<b>最多两套</b>（两居室或一居室）。<br><br><b>购房款结算：</b>所购房源购房款须在<b>货币补偿金额中扣减</b>，超出部分由购房人自行支付。',
+    src: '—— 《腾退政策》九、安置房源（二）申购标准',
+  },
+};
+
+const HOMES = [
+  {
+    id: 'dgz', name: '朝阳 · 豆各庄项目', tagline: '现房',
+    price: '27,680 元/㎡', priceNum: 27680,
+    rows: [
+      { k: '位置', v: '朝阳区豆各庄（磁器口东南约 16 公里）' },
+      { k: '开车', v: '约 45 分钟（16 公里）' },
+      { k: '公交', v: '约 57 分钟：7 号线 + 步行 18 分钟；或乘 41/535/411 路约 1 小时 23 分' },
+      { k: '装修', v: '毛坯（需自己花钱装修）', hl: 'warn' },
+      { k: '产权', v: '按经适房产权管理（转让有限制）', hl: 'warn' },
+      { k: '物业费', v: '1.63 元/月/㎡' },
+      { k: '停车费', v: '400 元/月' },
+    ],
+  },
+  {
+    id: 'dlu', name: '通州 · 东惠家园', tagline: '现房',
+    price: '21,000 元/㎡', priceNum: 21000,
+    rows: [
+      { k: '位置', v: '通州区（磁器口东南约 20 公里）' },
+      { k: '开车', v: '约 53 分钟（23.5 公里）' },
+      { k: '公交', v: '约 1 小时 11 分：5 号线转亦庄线 + 步行 24 分钟' },
+      { k: '装修', v: '毛坯（需自己花钱装修）', hl: 'warn' },
+      { k: '产权', v: '按经适房管理（转让有限制）', hl: 'warn' },
+      { k: '物业费', v: '1.98 元/月/㎡' },
+      { k: '停车费', v: '150 元/月' },
+    ],
+  },
+  {
+    id: 'dx', name: '大兴 · 和悦璞云', tagline: '现房',
+    price: '一房一价', priceNum: 0,
+    rows: [
+      { k: '位置', v: '大兴区（磁器口以南约 50 公里）' },
+      { k: '开车', v: '约 1 小时 12 分（50 公里）' },
+      { k: '公交', v: '约 1 小时 40 分：5 号线 → 300 路快内 → 849 路高速快车 + 步行 21 分钟' },
+      { k: '总价', v: '一居室约 88–107 万；二居室约 123–147 万' },
+      { k: '装修', v: '精装修（可直接入住）', hl: 'good' },
+      { k: '产权', v: '商品住房（需符合限购）', hl: 'warn' },
+      { k: '物业费', v: '3.98 元/月/㎡' },
+      { k: '停车费', v: '300 元/月' },
+    ],
+  },
+];
+
+let state = { step: 1, htype: null, area: '', biz: null, bizArea: '', sheet: null, big: false, tab: 'money' };
+
+try {
+  const saved = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
+  if (saved && typeof saved === 'object') {
+    state.step = [1, 2, 3, 4].includes(saved.step) ? saved.step : 1;
+    state.htype = HTYPES.some(h => h.v === saved.htype) ? saved.htype : null;
+    state.area = typeof saved.area === 'string' ? saved.area : '';
+    state.biz = typeof saved.biz === 'boolean' ? saved.biz : null;
+    state.bizArea = typeof saved.bizArea === 'string' ? saved.bizArea : '';
+    state.big = !!saved.big;
+    state.tab = saved.tab === 'house' ? 'house' : 'money';
+  }
+} catch (e) { /* ignore */ }
+
+function save() {
+  const { step, htype, area, biz, bizArea, big, tab } = state;
+  try { localStorage.setItem(LS_KEY, JSON.stringify({ step, htype, area, biz, bizArea, big, tab })); } catch (e) { /* ignore */ }
+}
+
+function setV(patch) {
+  Object.assign(state, patch);
+  save();
+  render();
+}
+
+function calc() {
+  const st = state;
+  const htype = st.htype || 'private';
+  const isPublic = htype === 'zhiguan' || htype === 'danwei';
+  const isBz = htype === 'biaozhun';
+  const deduct = isPublic || isBz;
+  const rawArea = Math.max(0, parseFloat(st.area) || 0);
+  const area = isPublic ? Math.round(rawArea * 1.333 * 100) / 100 : rawArea;
+  const comp = (PRICE - (deduct ? RESET : 0)) * area;
+  const move = MOVERATE * area;
+  const biz = st.biz === true;
+  const rawBiz = biz ? Math.max(0, parseFloat(st.bizArea) || 0) : 0;
+  const bizArea = area > 0 ? Math.min(rawBiz, area) : rawBiz;
+  const bizBonus = BIZRATE * bizArea;
+  const totalMoney = comp + move + bizBonus;
+  const smallE = area > 0 && area < 12;
+  const small = smallE ? (12 - area) * PRICE * 1.3 * 0.7 : 0;
+  const totalHouse = totalMoney + BUY + small;
+  return {
+    htype, isPublic, isBz, deduct, rawArea, area, comp, move,
+    biz, rawBiz, bizArea, bizBonus, totalMoney, smallE, small, totalHouse,
+    ready: area > 0, quota: area >= 30 ? 2 : 1,
+  };
+}
+
+function moneyLines(r) {
+  return [
+    {
+      name: '认定建筑面积',
+      formula: r.isPublic ? '合同使用面积 ' + fmtA(r.rawArea) + ' ㎡ × 1.333' : '按证书记载的建筑面积',
+      val: fmtA(r.area) + ' ㎡',
+      info: 'area',
+    },
+    {
+      name: r.isBz ? '承租人资助' : '房屋价值补偿',
+      formula: r.deduct ? '（90,764 − 2,898）元/㎡ × ' + fmtA(r.area) + ' ㎡' : '90,764 元/㎡ × ' + fmtA(r.area) + ' ㎡',
+      val: '＋' + fmt(r.comp) + ' 元',
+      info: 'comp',
+    },
+    {
+      name: '搬家腾房补助',
+      formula: '1,080 元/㎡ × ' + fmtA(r.area) + ' ㎡',
+      val: '＋' + fmt(r.move) + ' 元',
+      info: 'move',
+    },
+    ...(r.biz ? [{
+      name: '停产停业损失补助',
+      formula: r.bizArea > 0
+        ? '3,000 元/㎡ × ' + fmtA(r.bizArea) + ' ㎡' + (r.rawBiz > r.bizArea ? '（超出房屋面积部分不算）' : '')
+        : '未填营业面积，按 0 计算',
+      val: '＋' + fmt(r.bizBonus) + ' 元',
+      info: 'biz',
+    }] : []),
+  ];
+}
+
+function houseLines(r) {
+  return [
+    {
+      name: '货币补偿各项合计',
+      formula: '方案一的合计金额',
+      val: '＋' + fmt(r.totalMoney) + ' 元',
+      info: null,
+    },
+    {
+      name: '购房补助',
+      formula: '选择买安置房的，每户固定补 30 万元',
+      val: '＋300,000 元',
+      info: 'buy',
+    },
+    {
+      name: '小面积住房困难补助',
+      formula: r.smallE
+        ? '（12 − ' + fmtA(r.area) + '）㎡ × 90,764 元/㎡ × 1.3 × 70%'
+        : '您的面积已满 12 ㎡，这条不适用',
+      val: r.smallE ? '＋' + fmt(r.small) + ' 元' : '＋0 元',
+      info: 'small',
+    },
+  ];
+}
+
+function infoBtnHtml(key, label, fontSize, padding) {
+  return '<button data-act="info:' + key + '" style="border:1.5px solid #C8B68C;background:#FAF5E9;color:#7A5F33;font-size:' + fontSize + ';padding:' + padding + ';border-radius:' + (fontSize === '13.5px' ? '8px' : (fontSize === '14px' ? '8px' : '10px')) + ';cursor:pointer;white-space:nowrap;font-family:inherit;">' + label + '</button>';
+}
+
+function optionBtnHtml(act, sel, label, sub) {
+  return '<button data-act="' + act + '" style="display:block;width:100%;text-align:left;margin-top:14px;background:' + (sel ? '#FFFFFF' : '#FBF8F1') + ';border:' + (sel ? '2px solid #322A20' : '1.5px solid #D9CFBC') + ';border-radius:14px;padding:16px;cursor:pointer;font-family:inherit;">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
+    + '<span style="font-size:21px;font-weight:700;color:#322A20;">' + label + '</span>'
+    + '<span style="font-size:19px;color:#A63D2F;font-weight:700;">' + (sel ? '✓' : '') + '</span>'
+    + '</div>'
+    + '<div style="font-size:15.5px;color:#857A66;margin-top:4px;line-height:1.55;">' + sub + '</div>'
+    + '</button>';
+}
+
+function lineRowHtml(ln) {
+  return '<div style="display:flex;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px dashed #E3DBCB;">'
+    + '<div style="flex:1;min-width:0;">'
+    + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
+    + '<span style="font-size:17px;color:#322A20;font-weight:700;">' + ln.name + '</span>'
+    + (ln.info ? infoBtnHtml(ln.info, '政策原文', '13.5px', '3px 9px') : '')
+    + '</div>'
+    + '<div style="font-size:14px;color:#8A8170;margin-top:3px;line-height:1.55;">' + ln.formula + '</div>'
+    + '</div>'
+    + '<div style="font-size:17px;font-weight:700;white-space:nowrap;color:#322A20;font-variant-numeric:tabular-nums;">' + ln.val + '</div>'
+    + '</div>';
+}
+
+function step1Html(st) {
+  const opts = HTYPES.map(o => optionBtnHtml('htype:' + o.v, st.htype === o.v, o.label, o.sub)).join('');
+  return '<div style="padding:22px 20px 30px;">'
+    + '<div style="font-family:' + SERIF + ';font-size:27px;font-weight:900;line-height:1.45;">您家的房子，<br>是下面哪一种？</div>'
+    + '<div style="font-size:16px;color:#857A66;margin-top:8px;line-height:1.6;">不清楚的话，看看家里的房本或租赁合同。</div>'
+    + opts
+    + '</div>';
+}
+
+function step2Html(st, r) {
+  const areaQ = st.htype === 'zhiguan' ? '租赁合同上的使用面积，是多少平方米？'
+    : st.htype === 'danwei' ? '单位认定材料上的使用面积，是多少？'
+    : '房产证上的建筑面积，是多少平方米？';
+  const areaNote = (st.htype === 'zhiguan' || st.htype === 'danwei')
+    ? '政策按「使用面积 × 1.333」认定建筑面积；自建房面积不予认定。'
+    : '按证书记载的建筑面积填写；自建房面积不予认定。';
+  const showConv = r.isPublic && r.rawArea > 0;
+  return '<div style="padding:22px 20px 30px;">'
+    + '<div style="font-family:' + SERIF + ';font-size:27px;font-weight:900;line-height:1.45;">' + areaQ + '</div>'
+    + '<div style="font-size:16px;color:#857A66;margin-top:8px;line-height:1.6;">' + areaNote + '</div>'
+    + '<div style="display:flex;align-items:center;gap:10px;margin-top:24px;background:#FFFFFF;border:2px solid #322A20;border-radius:18px;padding:8px 18px;">'
+    + '<input id="areaIn" type="number" inputmode="decimal" value="' + escAttr(st.area) + '" placeholder="0" style="flex:1;min-width:0;width:0;border:none;outline:none;font-size:40px;font-weight:900;color:#322A20;font-family:' + SERIF + ';background:transparent;text-align:left;padding:8px 0;">'
+    + '<span style="font-size:21px;color:#857A66;flex:none;">平方米</span>'
+    + '</div>'
+    + '<div id="convBox" style="display:' + (showConv ? 'block' : 'none') + ';margin-top:14px;background:#FAF5E9;border:1px solid #E8DDC2;border-radius:12px;padding:12px 14px;font-size:17px;color:#7A5F33;font-weight:700;line-height:1.6;">'
+    + (showConv ? '按政策认定：' + fmtA(r.rawArea) + ' ㎡ × 1.333 ＝ 建筑面积 ' + fmtA(r.area) + ' ㎡' : '')
+    + '</div>'
+    + '<div style="text-align:center;margin-top:18px;">'
+    + infoBtnHtml('area', '面积是怎么认定的？看政策原文', '15.5px', '10px 16px')
+    + '</div>'
+    + '</div>';
+}
+
+function step3Html(st) {
+  const opts = [
+    { label: '没有', val: false, sub: '只是住家，没开店做生意。' },
+    { label: '有', val: true, sub: '有营业执照，在这处房子里经营。' },
+  ].map(o => optionBtnHtml('biz:' + (o.val ? '1' : '0'), st.biz === o.val, o.label, o.sub)).join('');
+  const bizInput = st.biz === true
+    ? '<div style="margin-top:16px;">'
+      + '<div style="font-size:17px;font-weight:700;">营业执照上的面积是多少？</div>'
+      + '<div style="display:flex;align-items:center;gap:10px;margin-top:10px;background:#FFFFFF;border:2px solid #322A20;border-radius:14px;padding:4px 16px;">'
+      + '<input id="bizIn" type="number" inputmode="decimal" value="' + escAttr(st.bizArea) + '" placeholder="0" style="flex:1;min-width:0;width:0;border:none;outline:none;font-size:30px;font-weight:900;color:#322A20;font-family:' + SERIF + ';background:transparent;text-align:left;padding:8px 0;">'
+      + '<span style="font-size:19px;color:#857A66;flex:none;">平方米</span>'
+      + '</div>'
+      + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;">'
+      + '<span style="font-size:14px;color:#857A66;line-height:1.6;">超过房屋面积的部分不算，会自动封顶。</span>'
+      + infoBtnHtml('biz', '看政策原文', '14px', '5px 10px')
+      + '</div>'
+      + '</div>'
+    : '';
+  return '<div style="padding:22px 20px 30px;">'
+    + '<div style="font-family:' + SERIF + ';font-size:27px;font-weight:900;line-height:1.45;">这房子有没有<br>用来做生意？</div>'
+    + '<div style="font-size:16px;color:#857A66;margin-top:8px;line-height:1.6;">指持营业执照、在这处房子里开店经营的情况。有的话另有补助。</div>'
+    + opts
+    + bizInput
+    + '</div>';
+}
+
+function homesHtml(r) {
+  const cards = HOMES.map(h => {
+    const t = r.totalHouse;
+    let dyn;
+    if (!r.ready) {
+      dyn = '填好面积后自动测算';
+    } else if (h.id === 'dx') {
+      if (t >= 1470000) dyn = '一居室、二居室都够买';
+      else if (t >= 1230000) dyn = '一居室都够买；二居室部分户型够';
+      else if (t >= 1070000) dyn = '一居室都够买；买二居室要添钱';
+      else if (t >= 880000) dyn = '部分一居室够买；买二居室要添钱';
+      else dyn = '买一居室（88 万起）需要自己添钱';
+      dyn += '（未计税费）。';
+    } else {
+      const max = Math.floor(t / h.priceNum * 100) / 100;
+      dyn = '不另掏钱最多能买约 ' + fmtA(max) + ' ㎡（未计税费）。';
+    }
+    const rows = h.rows.map(rw => {
+      const color = rw.hl === 'warn' ? '#8A4438' : (rw.hl === 'good' ? '#2F4A38' : '#4A4338');
+      const weight = rw.hl ? '700' : '500';
+      return '<div style="display:flex;gap:10px;padding:3px 0;font-size:14px;line-height:1.6;">'
+        + '<span style="flex:none;width:52px;color:#857A66;">' + rw.k + '</span>'
+        + '<span style="color:' + color + ';font-weight:' + weight + ';">' + rw.v + '</span>'
+        + '</div>';
+    }).join('');
+    return '<div style="background:#FFFDF8;border:1px solid #E4DCCB;border-radius:14px;padding:14px 16px;margin-top:10px;">'
+      + '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;">'
+      + '<span style="font-size:18px;font-weight:700;color:#322A20;">' + h.name + '</span>'
+      + '<span style="font-size:13px;color:#857A66;">' + h.tagline + '</span>'
+      + '</div>'
+      + '<div style="font-family:' + SERIF + ';font-size:19px;font-weight:700;color:#322A20;margin-top:4px;">' + h.price + '</div>'
+      + '<div style="margin-top:8px;border-top:1px dashed #E0D6C2;padding-top:8px;">' + rows + '</div>'
+      + '<div style="margin-top:10px;background:#EFF4EE;border-radius:10px;padding:10px 12px;font-size:15px;line-height:1.6;color:#2F4A38;font-weight:600;">' + dyn + '</div>'
+      + '</div>';
+  }).join('');
+  const quotaText = r.ready
+    ? '认定面积 ' + fmtA(r.area) + ' ㎡（' + (r.area >= 30 ? '满' : '不满') + ' 30 ㎡），最多可买 ' + r.quota + ' 套对接安置房源。'
+    : '填好面积后，这里会显示您家最多能买几套。';
+  return '<div style="margin:16px 14px 0;">'
+    + '<div style="font-size:20px;font-weight:700;">能买哪里的房？</div>'
+    + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;">'
+    + '<span style="font-size:15.5px;font-weight:700;color:#322A20;line-height:1.6;">' + quotaText + '</span>'
+    + infoBtnHtml('quota', '看政策原文', '14px', '5px 10px')
+    + '</div>'
+    + cards
+    + '<div style="font-size:12.5px;color:#9A9080;margin-top:10px;line-height:1.6;">位置、距离与交通为公开信息整理；物业费、停车费以小区公示为准。以上信息仅供参考，请实地核实。</div>'
+    + '</div>';
+}
+
+function step4Html(st, r) {
+  const moneyWan = r.ready ? wanStr(r.totalMoney) : '—';
+  const houseWan = r.ready ? wanStr(r.totalHouse) : '—';
+  const moneyYuan = r.ready ? fmt(r.totalMoney) + ' 元' : '';
+  const houseYuan = r.ready ? fmt(r.totalHouse) + ' 元' : '';
+  const tabHouse = st.tab === 'house';
+
+  const switcher = '<div id="topMark"></div>'
+    + '<div style="position:sticky;top:68px;z-index:15;background:#F6F2EA;padding:10px 14px 10px;border-bottom:1px solid #E0D6C2;box-shadow:0 6px 14px rgba(50,42,32,0.06);">'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">'
+    + '<button data-act="tab:money" style="text-align:left;background:' + (!tabHouse ? '#FFFFFF' : '#EFE9DC') + ';border:' + (!tabHouse ? '2px solid #322A20' : '1.5px solid transparent') + ';border-radius:12px;padding:10px 12px;cursor:pointer;font-family:inherit;">'
+    + '<div style="font-size:13.5px;color:#857A66;font-weight:700;">方案一 · 货币补偿</div>'
+    + '<div style="font-family:' + SERIF + ';font-size:25px;font-weight:900;color:#322A20;margin-top:2px;line-height:1.15;">' + moneyWan + '<span style="font-size:14px;font-weight:700;margin-left:3px;">万元</span></div>'
+    + '<div style="font-size:12px;color:#857A66;margin-top:2px;">' + moneyYuan + '</div>'
+    + '</button>'
+    + '<button data-act="tab:house" style="text-align:left;background:' + (tabHouse ? '#FFFFFF' : '#EFE9DC') + ';border:' + (tabHouse ? '2px solid #A63D2F' : '1.5px solid transparent') + ';border-radius:12px;padding:10px 12px;cursor:pointer;font-family:inherit;">'
+    + '<div style="font-size:13.5px;color:#857A66;font-weight:700;">方案二 · 买安置房</div>'
+    + '<div style="font-family:' + SERIF + ';font-size:25px;font-weight:900;color:#A63D2F;margin-top:2px;line-height:1.15;">' + houseWan + '<span style="font-size:14px;font-weight:700;margin-left:3px;">万元</span></div>'
+    + '<div style="font-size:12px;color:#857A66;margin-top:2px;">' + houseYuan + '</div>'
+    + '</button>'
+    + '</div>'
+    + '<div style="font-size:13px;color:#857A66;margin-top:6px;line-height:1.5;">点上面方块切换，下方是对应方案的明细账。</div>'
+    + '</div>';
+
+  const moneyDetail = '<div style="margin:14px 14px 0;background:#FFFDF8;border:1.5px solid #E0D6C2;border-radius:16px;padding:16px;">'
+    + '<div style="display:flex;align-items:center;gap:8px;">'
+    + '<span style="background:#322A20;color:#F6F2EA;font-size:13.5px;font-weight:700;border-radius:6px;padding:2px 8px;">方案一</span>'
+    + '<span style="font-size:19px;font-weight:700;">货币补偿，是怎么算的</span>'
+    + '</div>'
+    + moneyLines(r).map(lineRowHtml).join('')
+    + '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;border-top:3px double #C9BFA9;margin-top:4px;padding-top:11px;">'
+    + '<span style="font-size:17px;font-weight:700;">合计</span>'
+    + '<span style="font-family:' + SERIF + ';font-size:24px;font-weight:900;color:#322A20;">' + moneyWan + '<span style="font-size:14px;font-weight:700;margin-left:3px;">万元</span></span>'
+    + '</div>'
+    + '</div>';
+
+  const houseDetail = '<div style="margin:14px 14px 0;background:#FFFDF8;border:1.5px solid #E5CFC6;border-radius:16px;padding:16px;">'
+    + '<div style="display:flex;align-items:center;gap:8px;">'
+    + '<span style="background:#A63D2F;color:#FBF6F1;font-size:13.5px;font-weight:700;border-radius:6px;padding:2px 8px;">方案二</span>'
+    + '<span style="font-size:19px;font-weight:700;">买安置房，在方案一上再加</span>'
+    + '</div>'
+    + houseLines(r).map(lineRowHtml).join('')
+    + '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;border-top:3px double #C9BFA9;margin-top:4px;padding-top:11px;">'
+    + '<span style="font-size:17px;font-weight:700;">合计</span>'
+    + '<span style="font-family:' + SERIF + ';font-size:24px;font-weight:900;color:#A63D2F;">' + houseWan + '<span style="font-size:14px;font-weight:700;margin-left:3px;">万元</span></span>'
+    + '</div>'
+    + '<div style="margin-top:10px;background:#F9EFEC;border:1px solid #EAD2C9;border-radius:10px;padding:9px 12px;font-size:14.5px;line-height:1.65;color:#8A4438;">买房的钱从这笔补偿里扣，超出部分自己付。</div>'
+    + '</div>'
+    + homesHtml(r);
+
+  const times = '<div style="margin:14px 14px 0;background:#FFFDF8;border:1px solid #E4DCCB;border-radius:16px;padding:4px 16px 18px;">'
+    + '<div style="font-size:20px;font-weight:700;margin-top:14px;">关键时间，别错过</div>'
+    + '<div style="padding:12px 0 10px;border-bottom:1px dashed #E3DBCB;">'
+    + '<div style="font-size:14.5px;color:#857A66;font-weight:600;">申请期</div>'
+    + '<div style="font-size:18px;font-weight:700;color:#A63D2F;margin-top:2px;">6 月 12 日 — 6 月 30 日</div>'
+    + '<div style="font-size:14px;color:#857A66;margin-top:3px;line-height:1.6;">提出腾退申请，实施主体上门评估；整院一起申请的可同时签约。</div>'
+    + '</div>'
+    + '<div style="padding:12px 0 10px;border-bottom:1px dashed #E3DBCB;">'
+    + '<div style="font-size:14.5px;color:#857A66;font-weight:600;">预签约期</div>'
+    + '<div style="font-size:18px;font-weight:700;color:#A63D2F;margin-top:2px;">7 月 18 日 — 8 月 16 日 24:00</div>'
+    + '<div style="font-size:14px;color:#857A66;margin-top:3px;line-height:1.6;">整院完成预签后协议自动生效；直管公房签约达 80% 且整院仅剩两户以下未签的，协议生效。</div>'
+    + '</div>'
+    + '<div style="padding:12px 0 4px;">'
+    + '<div style="font-size:14.5px;color:#857A66;font-weight:600;">咨询接待</div>'
+    + '<div style="font-size:16px;font-weight:700;color:#322A20;margin-top:2px;">驹章胡同 43 号 · 每天 9:00–12:00、14:00–18:00（节假日不休）</div>'
+    + '</div>'
+    + '<a href="tel:13718006101" style="display:flex;align-items:center;justify-content:center;width:100%;margin-top:10px;height:56px;border:2px solid #322A20;background:#FFFFFF;border-radius:14px;font-size:19px;font-weight:700;color:#322A20;cursor:pointer;font-family:inherit;text-decoration:none;box-sizing:border-box;">拨打咨询电话　137-1800-6101</a>'
+    + '</div>';
+
+  const disclaimer = '<div style="padding:14px 18px 0;font-size:12.5px;color:#9A9080;line-height:1.7;"><b>免责声明：</b>本计算器与项目实施主体无任何关系，仅按公开文件（《腾退政策》《致居民的一封信（二）》《房地产评估结果公示》）试算，各户金额以分户评估报告为准。</div>';
+
+  return '<div style="padding:14px 0 30px;">'
+    + switcher
+    + (tabHouse ? houseDetail : moneyDetail)
+    + times
+    + disclaimer
+    + '</div>';
+}
+
+function bottomBarHtml(st, r) {
+  let inner;
+  if (st.step === 1) {
+    inner = '<button data-act="next1" style="width:100%;height:58px;border:none;background:' + (st.htype ? '#A63D2F' : '#CFC5B2') + ';border-radius:14px;font-size:20px;font-weight:700;color:#FFFFFF;cursor:pointer;font-family:inherit;">下一步</button>';
+  } else if (st.step === 2) {
+    inner = '<div style="display:flex;gap:10px;">'
+      + '<button data-act="back" style="flex:1;height:58px;border:2px solid #D9CFBC;background:#FFFFFF;border-radius:14px;font-size:19px;font-weight:700;color:#322A20;cursor:pointer;font-family:inherit;">上一步</button>'
+      + '<button id="btnNext2" data-act="next2" style="flex:2;height:58px;border:none;background:' + (r.rawArea > 0 ? '#A63D2F' : '#CFC5B2') + ';border-radius:14px;font-size:20px;font-weight:700;color:#FFFFFF;cursor:pointer;font-family:inherit;">下一步</button>'
+      + '</div>';
+  } else if (st.step === 3) {
+    inner = '<div style="display:flex;gap:10px;">'
+      + '<button data-act="back" style="flex:1;height:58px;border:2px solid #D9CFBC;background:#FFFFFF;border-radius:14px;font-size:19px;font-weight:700;color:#322A20;cursor:pointer;font-family:inherit;">上一步</button>'
+      + '<button data-act="next3" style="flex:2;height:58px;border:none;background:' + (st.biz !== null ? '#A63D2F' : '#CFC5B2') + ';border-radius:14px;font-size:20px;font-weight:700;color:#FFFFFF;cursor:pointer;font-family:inherit;">看测算结果</button>'
+      + '</div>';
+  } else {
+    inner = '<button data-act="restart" style="width:100%;height:58px;border:2px solid #D9CFBC;background:#FFFFFF;border-radius:14px;font-size:19px;font-weight:700;color:#322A20;cursor:pointer;font-family:inherit;">重新算一遍</button>';
+  }
+  return '<div style="position:sticky;bottom:0;z-index:20;background:#FFFDF8;border-top:1px solid #E0D6C2;padding:12px 16px 18px;box-shadow:0 -6px 18px rgba(50,42,32,0.07);">' + inner + '</div>';
+}
+
+function sheetHtml(st) {
+  const info = st.sheet ? INFO[st.sheet] : null;
+  if (!info) return '';
+  return '<div data-act="close" style="position:fixed;inset:0;background:rgba(43,38,34,0.45);z-index:40;"></div>'
+    + '<div style="position:fixed;left:50%;transform:translateX(-50%);bottom:0;width:100%;max-width:480px;z-index:41;background:#FFFDF8;border-radius:20px 20px 0 0;max-height:74vh;display:flex;flex-direction:column;box-shadow:0 -10px 30px rgba(0,0,0,0.2);box-sizing:border-box;">'
+    + '<div style="flex:none;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:16px 18px 12px;border-bottom:1px solid #E7DFCE;">'
+    + '<span style="font-size:18px;font-weight:700;">' + info.title + '</span>'
+    + '<button data-act="close" style="border:1.5px solid #D9CFBC;background:#FBF8F1;border-radius:10px;height:42px;padding:0 18px;font-size:16px;font-weight:700;color:#322A20;cursor:pointer;font-family:inherit;">关闭</button>'
+    + '</div>'
+    + '<div style="overflow-y:auto;padding:14px 18px 40px;">'
+    + '<div style="border-left:3px solid #8A6D3B;background:#FAF5E9;padding:12px 14px;border-radius:0 10px 10px 0;color:#594A2E;font-size:16.5px;line-height:1.85;">' + info.quote + '</div>'
+    + '<div style="font-size:13.5px;color:#9B8A63;margin-top:10px;">' + info.src + '</div>'
+    + '</div>'
+    + '</div>';
+}
+
+function render() {
+  const st = state, r = calc(), step = st.step;
+  const main = step === 1 ? step1Html(st)
+    : step === 2 ? step2Html(st, r)
+    : step === 3 ? step3Html(st)
+    : step4Html(st, r);
+  const progText = step <= 3 ? '第 ' + step + ' 步，共 3 步' : '测算结果（仅供参考）';
+  const progSegs = step <= 3
+    ? '<div style="display:flex;gap:6px;margin-top:8px;">'
+      + [1, 2, 3].map(i => '<div style="flex:1;height:6px;border-radius:3px;background:' + (step >= i ? '#A63D2F' : '#E2D8C5') + ';"></div>').join('')
+      + '</div>'
+    : '';
+
+  document.getElementById('app').innerHTML =
+    '<div style="min-height:100vh;display:flex;justify-content:center;font-family:-apple-system,\'PingFang SC\',\'Hiragino Sans GB\',\'Microsoft YaHei\',sans-serif;color:#322A20;">'
+    + '<div style="width:100%;max-width:480px;background:#F6F2EA;min-height:100vh;display:flex;flex-direction:column;box-shadow:0 0 40px rgba(50,42,32,0.1);">'
+    + '<div style="position:sticky;top:0;z-index:20;background:#F6F2EA;border-bottom:1px solid #E7DFCE;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 16px;">'
+    + '<div style="font-size:18px;font-weight:700;">腾退补偿计算器</div>'
+    + '<button data-act="toggleBig" style="border:1.5px solid #322A20;background:#FFFFFF;color:#322A20;border-radius:10px;height:40px;padding:0 14px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;">' + (st.big ? '恢复字号' : '放大字体') + '</button>'
+    + '</div>'
+    + '<div style="zoom:' + (st.big ? '1.18' : '1') + ';display:flex;flex-direction:column;flex:1;">'
+    + '<div style="padding:14px 18px 0;">'
+    + '<div style="font-size:15px;color:#857A66;font-weight:600;">' + progText + '</div>'
+    + progSegs
+    + '</div>'
+    + main
+    + '<div style="flex:1;"></div>'
+    + bottomBarHtml(st, r)
+    + '</div>'
+    + '</div>'
+    + sheetHtml(st)
+    + '</div>';
+
+  bindInputs();
+}
+
+function patchAreaLive() {
+  const r = calc();
+  const box = document.getElementById('convBox');
+  if (box) {
+    const show = r.isPublic && r.rawArea > 0;
+    box.style.display = show ? 'block' : 'none';
+    box.textContent = show ? '按政策认定：' + fmtA(r.rawArea) + ' ㎡ × 1.333 ＝ 建筑面积 ' + fmtA(r.area) + ' ㎡' : '';
+  }
+  const btn = document.getElementById('btnNext2');
+  if (btn) btn.style.background = r.rawArea > 0 ? '#A63D2F' : '#CFC5B2';
+}
+
+function bindInputs() {
+  const a = document.getElementById('areaIn');
+  if (a) a.addEventListener('input', e => { state.area = e.target.value; save(); patchAreaLive(); });
+  const b = document.getElementById('bizIn');
+  if (b) b.addEventListener('input', e => { state.bizArea = e.target.value; save(); });
+}
+
+function goStep(n) {
+  setV({ step: n });
+  window.scrollTo(0, 0);
+}
+
+function pickTab(tab) {
+  const mark = document.getElementById('topMark');
+  const wasBelow = mark ? mark.getBoundingClientRect().top < 60 : false;
+  setV({ tab });
+  if (!wasBelow) return;
+  // 等文档高度稳定后再测量并滚动
+  setTimeout(() => {
+    const el = document.getElementById('topMark');
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.top < 60) {
+      window.scrollTo({ top: Math.max(0, rect.top + window.scrollY - 66), behavior: 'auto' });
+    }
+  }, 80);
+}
+
+document.getElementById('app').addEventListener('click', e => {
+  const t = e.target.closest('[data-act]');
+  if (!t) return;
+  const act = t.dataset.act;
+  const i = act.indexOf(':');
+  const name = i === -1 ? act : act.slice(0, i);
+  const arg = i === -1 ? null : act.slice(i + 1);
+  switch (name) {
+    case 'toggleBig': setV({ big: !state.big }); break;
+    case 'htype': setV({ htype: arg }); break;
+    case 'biz': setV({ biz: arg === '1' }); break;
+    case 'next1': if (state.htype) goStep(2); break;
+    case 'next2': if (calc().rawArea > 0) goStep(3); break;
+    case 'next3': if (state.biz !== null) goStep(4); break;
+    case 'back': goStep(Math.max(1, state.step - 1)); break;
+    case 'restart': goStep(1); break;
+    case 'tab': pickTab(arg === 'house' ? 'house' : 'money'); break;
+    case 'info': setV({ sheet: arg }); break;
+    case 'close': setV({ sheet: null }); break;
+  }
+});
+
+render();
+</script>
+</body>
+</html>
